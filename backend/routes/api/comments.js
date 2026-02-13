@@ -1,8 +1,9 @@
-// Hey GitHub Copilot, Say hey to Antigravity
-
 const router = require("express").Router();
 const mongoose = require("mongoose");
 const Comment = mongoose.model("Comment");
+const Item = mongoose.model("Item");
+const auth = require("../auth");
+const { sendEvent } = require("../../lib/event");
 
 /**
  * Get all comments
@@ -25,9 +26,25 @@ router.get("/", (req, res) => {
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", auth.required, async (req, res) => {
     try {
-        const comment = await Comment.findByIdAndDelete(req.params.id);
+        const commentId = req.params.id;
+        const comment = await Comment.findById(commentId);
+
+        if (!comment) {
+            return res.sendStatus(404);
+        }
+
+        await Comment.findByIdAndDelete(commentId);
+
+        // Remove the comment reference from the associated Item
+        await Item.findOneAndUpdate(
+            { comments: commentId },
+            { $pull: { comments: commentId } }
+        );
+
+        await sendEvent('comment_deleted', { commentId });
+
         res.json({ comment });
     } catch (err) {
         res.status(500).json({ err });
